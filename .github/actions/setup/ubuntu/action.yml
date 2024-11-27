@@ -51,3 +51,8 @@ runs:
         zlib1g-dev${arch} libncurses5-dev${arch} libffi-dev${arch} \
         autoconf ruby
         sudo apt-get install -qq -y pkg-config${arch} || :
+
+    - uses: ruby/setup-ruby@a6e6f86333f0a2523ece813039b8b4be04560854 # v1.190.0
+      with:
+        ruby-version: '3.3'
+        bundler: none

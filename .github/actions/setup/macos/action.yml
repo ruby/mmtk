@@ -27,3 +27,11 @@ runs:
         }
         dir_config ruby_configure_args gmp
         dir_config CONFIGURE_ARGS openssl@3
+
+    - name: make sure that kern.coredump=1
+      shell: bash
+      run: |
+        sysctl -n kern.coredump
+        sudo sysctl -w kern.coredump=1
+        sudo chmod -R +rwx /cores/
+

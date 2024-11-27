@@ -49,19 +49,6 @@ jobs:
           fi
           echo 'MMTK_PLAN=${{ matrix.gc.mmtk_plan }}' >> $GITHUB_ENV
 
-      - uses: ruby/setup-ruby@a6e6f86333f0a2523ece813039b8b4be04560854 # v1.190.0
-        with:
-          ruby-version: '3.3'
-          bundler: none
-        if: ${{ contains(matrix.os, 'ubuntu') }}
-
-      - name: make sure that kern.coredump=1
-        run: |
-          sysctl -n kern.coredump
-          sudo sysctl -w kern.coredump=1
-          sudo chmod -R +rwx /cores/
-        if: ${{ contains(matrix.os, 'macos') }}
-
       - name: Install Bundler dependencies
         run: bundle install
 
