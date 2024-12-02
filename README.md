@@ -21,7 +21,13 @@ This command will:
    - **Compiling the MMTk shared library**: Builds `librubygc.mmtk.so` using Rust's Cargo build system.
    - **Install the shared library**: Copies `librubygc.mmtk.so` into the `mod_gc` directory.
 
-Once it's done, you'll have a shared object `mod_gc/librubygc.mmtk.so` (`modgc/librubygc.mmtk.bundle` on macOS), that can be loaded into any Ruby interpeter built `--with-shared-gc` support. 
+Once it's done, you'll have a shared object `mod_gc/librubygc.mmtk.so` (`modgc/librubygc.mmtk.bundle` on macOS), that can be loaded into any Ruby interpeter built `--with-shared-gc` support using the path.
+
+Example:
+
+```
+./configure --with-shared-gc=$HOME/mmtk/mod_gc
+```
 
 Successful builds, when loaded, will display `+GC[mmtk]`  in the Ruby version string. This indicates that Ruby has been compiled with shared GC support and that MMTk is loaded.
 
