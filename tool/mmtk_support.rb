@@ -15,6 +15,9 @@ class MMTkSupport
       system("git clone https://github.com/ruby/ruby.git --depth 1 res/ruby") or
         raise "Failed to clone Ruby repository"
     end
+    FileUtils.chdir("res/ruby") do
+      system("git checkout mvh-modgc-ci")
+    end
   end
 
   def cp_mmtk_gc
