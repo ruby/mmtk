@@ -12,7 +12,7 @@ class MMTkSupport
   def clone_ruby_repo
     FileUtils.mkdir_p("res/ruby")
     unless Dir.exist?("res/ruby/.git")
-      system("git clone -b mvh-modgc-ci --single-branch --depth 1 https://github.com/shopify/ruby.git res/ruby") or
+      system("git clone -b mmtk-test-rake-gemspec --single-branch --depth 1 https://github.com/eileencodes/ruby.git res/ruby") or
         raise "Failed to clone Ruby repository"
     end
   end
