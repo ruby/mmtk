@@ -63,6 +63,7 @@ jobs:
           echo 'EXCLUDES=../../test/.excludes-mmtk' >> $GITHUB_ENV
           echo 'MSPECOPT=-B../../spec/mmtk.mspec' >> $GITHUB_ENV
           echo 'MMTK_PLAN=${{ matrix.gc.mmtk_plan }}' >> $GITHUB_ENV
+          echo 'GITHUB_WORKFLOW=MMTk' >> $GITHUB_ENV
 
       - name: Install Bundler dependencies
         run: bundle install
