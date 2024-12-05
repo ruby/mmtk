@@ -2,14 +2,19 @@
 
 require "fileutils"
 require "net/http"
+require "rbconfig"
 require "rake/extensiontask"
 
-task default: :compile
+task default: [:compile, :install]
 
 Rake::ExtensionTask.new do |ext|
   ext.name = "librubygc.mmtk"
   ext.ext_dir = "gc/mmtk"
   ext.lib_dir = "tmp/binaries"
+end
+
+task :install do
+  FileUtils.mv(Dir.glob("tmp/binaries/*"), RbConfig::CONFIG["modular_gc_dir"])
 end
 
 RUBY_HEADERS = %w[
