@@ -1,4 +1,5 @@
 .ruby-version
+Gemfile.lock
 
 # ignore resources directory, where temp build artifacts are placed
 res
