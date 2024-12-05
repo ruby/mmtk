@@ -2,6 +2,15 @@
 
 require "fileutils"
 require "net/http"
+require "rake/extensiontask"
+
+task default: :compile
+
+Rake::ExtensionTask.new do |ext|
+  ext.name = "librubygc.mmtk"
+  ext.ext_dir = "gc/mmtk"
+  ext.lib_dir = "tmp/binaries"
+end
 
 RUBY_HEADERS = %w[
   ccan/check_type/check_type.h ccan/container_of/container_of.h ccan/list/list.h ccan/str/str.h
