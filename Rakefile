@@ -1,34 +1,22 @@
 # frozen_string_literal: true
 
-$LOAD_PATH << File.expand_path("tool", __dir__)
+require "fileutils"
+require "net/http"
 
-require 'fileutils'
-require 'tempfile'
-require 'net/http'
-require 'digest'
-require 'etc'
-require 'mmtk_support'
+RUBY_HEADERS = %w[
+  ccan/check_type/check_type.h ccan/container_of/container_of.h ccan/list/list.h ccan/str/str.h
+  gc/gc_impl.h gc/gc.h gc/extconf_base.rb
+  darray.h
+]
+task :vendor_ruby_headers do
+  RUBY_HEADERS.each do |file|
+    Net::HTTP.start("raw.githubusercontent.com", 443, use_ssl: true) do |http|
+      resp = http.get("ruby/ruby/refs/heads/master/#{file}")
 
-task default: %i[compile install]
-
-desc <<~DESC
-  Install the MMTk GC shared object into the Shared GC dir for the currently
-  running Ruby
-DESC
-task :install, :compile do
-  install_mmtk
-end
-
-desc <<~DESC
-  Build the MMTk GC implementation shared object
-DESC
-task :compile do
-  MMTkSupport.new.build
-end
-
-desc <<~DESC
-  Remove all generated build artifacts
-DESC
-task :clean do
-  system("git clean -ffdx")
+      FileUtils.mkdir_p(File.dirname(file))
+      open(file, "wb") do |file|
+        file.write(resp.body)
+      end
+    end
+  end
 end
