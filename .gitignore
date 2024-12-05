@@ -1,3 +1,5 @@
+.ruby-version
+
 # ignore resources directory, where temp build artifacts are placed
 res
 
