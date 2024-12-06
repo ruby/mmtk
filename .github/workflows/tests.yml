@@ -83,7 +83,7 @@ jobs:
             --with-modular-gc=${{ github.workspace }}/tmp/binaries
           make -j
           make install
-          echo 'PATH=/opt/homebrew/bin:$PATH' >> $GITHUB_ENV
+          echo '/opt/homebrew/bin' >> $GITHUB_PATH
 
       - name: build Ruby & MMTk shared GC
         run: |
