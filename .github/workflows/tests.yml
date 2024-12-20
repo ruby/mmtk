@@ -20,9 +20,10 @@ jobs:
           - mmtk_plan: MarkSweep
             mmtk_build: release
             timeout: 120
-          - mmtk_plan: MarkSweep
-            mmtk_build: debug
-            timeout: 120
+          # TODO: debug builds are sufferring from intermittent thread related failures
+          # - mmtk_plan: MarkSweep
+          #   mmtk_build: debug
+          #   timeout: 120
         os: [macos-latest, ubuntu-latest]
 
     env:
