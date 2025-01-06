@@ -5,12 +5,24 @@ require "net/http"
 require "rbconfig"
 require "rake/extensiontask"
 
-task default: [:compile, :install]
+Rake::ExtensionTask.prepend(Module.new do
+  def binary(platform = nil)
+    "librubygc.mmtk.#{RbConfig::CONFIG["DLEXT"]}"
+  end
+end)
 
-Rake::ExtensionTask.new do |ext|
-  ext.name = "librubygc.mmtk"
+task default: [:"compile:debug", :install]
+
+extension_configuration = proc do |ext|
   ext.ext_dir = "gc/mmtk"
   ext.lib_dir = "tmp/binaries"
+end
+
+Rake::ExtensionTask.new(:debug, &extension_configuration)
+
+Rake::ExtensionTask.new(:release) do |ext|
+  extension_configuration.call(ext)
+  ext.instance_variable_set(:@make, ext.send(:make) + " MMTK_BUILD=release")
 end
 
 task :install do
