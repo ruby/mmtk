@@ -11,7 +11,7 @@ Rake::ExtensionTask.prepend(Module.new do
   end
 end)
 
-task default: [:"compile:debug", :install]
+task default: :"install:debug"
 
 extension_configuration = proc do |ext|
   ext.ext_dir = "gc/mmtk"
@@ -25,8 +25,13 @@ Rake::ExtensionTask.new(:release) do |ext|
   ext.instance_variable_set(:@make, ext.send(:make) + " MMTK_BUILD=release")
 end
 
-task :install do
-  FileUtils.mv(Dir.glob("tmp/binaries/*"), RbConfig::CONFIG["modular_gc_dir"])
+namespace :install do
+  install_task = proc do
+    FileUtils.mv(Dir.glob("tmp/binaries/*"), RbConfig::CONFIG["modular_gc_dir"])
+  end
+
+  task(debug: :"compile:debug", &install_task)
+  task(release: :"compile:release", &install_task)
 end
 
 RUBY_HEADERS = %w[
