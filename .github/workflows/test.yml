@@ -1,0 +1,103 @@
+name: Test
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        gc:
+          - mmtk_plan: MarkSweep
+            mmtk_build: release
+          - mmtk_plan: MarkSweep
+            mmtk_build: debug
+            timeout: 150
+        os: [macos-latest, ubuntu-latest]
+
+    env:
+      GITPULLOPTIONS: --no-tags origin ${{ github.ref }}
+      RUBY_DEBUG: ci
+
+    runs-on: ${{ matrix.os }}
+
+    if: >-
+      ${{!(false
+      || contains(github.event.head_commit.message, '[DOC]')
+      || contains(github.event.head_commit.message, 'Document')
+      || contains(github.event.pull_request.title, '[DOC]')
+      || contains(github.event.pull_request.title, 'Document')
+      || contains(github.event.pull_request.labels.*.name, 'Documentation')
+      || (github.event_name == 'push' && github.event.pull_request.user.login == 'dependabot[bot]')
+      )}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mmtk
+
+      - name: Install libraries (macOS)
+        if: ${{ contains(matrix.os, 'macos') }}
+        working-directory: mmtk
+        run: |
+          brew install --quiet gmp libffi openssl@3 zlib autoconf automake libtool
+
+      - name: Install libraries (Ubuntu)
+        if: ${{ contains(matrix.os, 'ubuntu') }}
+        working-directory: mmtk
+        run: |
+          sudo apt-get install -qq -y \
+            ${arch:+cross}build-essential${arch/:/-} \
+            libssl-dev${arch} libyaml-dev${arch} libreadline6-dev${arch} \
+            zlib1g-dev${arch} libncurses5-dev${arch} libffi-dev${arch}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Set MMTk environment variables
+        working-directory: mmtk
+        run: |
+          if [[ ${{ matrix.gc.mmtk_build }} == debug ]]; then
+            echo 'RUST_LOG=' >> $GITHUB_ENV
+            echo 'RUBY_TEST_TIMEOUT_SCALE=20' >> $GITHUB_ENV
+            echo 'SYNTAX_SUGGEST_TIMEOUT=60' >> $GITHUB_ENV
+          fi
+          echo "EXCLUDES=$PWD/test/.excludes-mmtk" >> $GITHUB_ENV
+          echo "MSPECOPT=-B$PWD/spec/mmtk.mspec" >> $GITHUB_ENV
+          echo 'MMTK_PLAN=${{ matrix.gc.mmtk_plan }}' >> $GITHUB_ENV
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ruby/ruby
+          path: ruby
+
+      - name: Build Ruby
+        working-directory: ruby
+        run: |
+          bash autogen.sh
+          ./configure \
+            --prefix=$PWD/install \
+            --disable-install-doc \
+            --with-modular-gc=$GITHUB_WORKSPACE/ruby_gc
+          make -j
+          make install
+          echo "$PWD/install/bin" >> $GITHUB_PATH
+
+      - name: MMTk shared GC
+        working-directory: mmtk
+        run: |
+          bundle install
+          bundle exec rake install:${{ matrix.gc.mmtk_build }}
+          echo "RUBY_GC_LIBRARY=mmtk" >> $GITHUB_ENV
+
+      - name: Run Ruby tests
+        working-directory: ruby
+        run: >-
+          make -s check
+        timeout-minutes: ${{ matrix.gc.timeout || 40 }}
+        env:
+          RUBY_TESTOPTS: '-q --tty=no'
+          TEST_BUNDLED_GEMS_ALLOW_FAILURES: 'typeprof'
+          PRECHECK_BUNDLED_GEMS: 'no'
