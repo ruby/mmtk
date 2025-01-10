@@ -17,6 +17,11 @@ jobs:
           - mmtk_plan: MarkSweep
             mmtk_build: debug
             timeout: 150
+          - mmtk_plan: Immix
+            mmtk_build: release
+          - mmtk_plan: Immix
+            mmtk_build: debug
+            timeout: 150
         os: [macos-latest, ubuntu-latest]
 
     env:
