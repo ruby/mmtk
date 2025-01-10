@@ -73,6 +73,12 @@ jobs:
           repository: ruby/ruby
           path: ruby
 
+      - if: ${{ contains(matrix.os, 'ubuntu') }}
+        run: echo "GNUMAKEFLAGS=-sj$((1 + $(nproc --all)))" >> "$GITHUB_ENV"
+
+      - if: ${{ contains(matrix.os, 'macos') }}
+        run: echo "MAKEFLAGS=-j$((1 + $(sysctl -n hw.activecpu)))" >> "$GITHUB_ENV"
+
       - name: Build Ruby
         working-directory: ruby
         run: |
