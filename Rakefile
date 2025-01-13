@@ -4,14 +4,19 @@ require "fileutils"
 require "net/http"
 require "rbconfig"
 require "rake/extensiontask"
+require "rake/testtask"
+
+task default: :"install:debug"
+
+Rake::TestTask.new(:test) do |t|
+  t.test_files = FileList["test/**/test_*.rb"]
+end
 
 Rake::ExtensionTask.prepend(Module.new do
   def binary(platform = nil)
     "librubygc.mmtk.#{RbConfig::CONFIG["DLEXT"]}"
   end
 end)
-
-task default: :"install:debug"
 
 extension_configuration = proc do |ext|
   ext.ext_dir = "gc/mmtk"
