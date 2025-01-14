@@ -96,12 +96,16 @@ jobs:
           make install
           echo "$PWD/install/bin" >> $GITHUB_PATH
 
-      - name: MMTk shared GC
+      - name: Build MMTk shared GC
         working-directory: mmtk
         run: |
           bundle install
           bundle exec rake install:${{ matrix.gc.mmtk_build }}
           echo "RUBY_GC_LIBRARY=mmtk" >> $GITHUB_ENV
+
+      - name: Run MMTk tests
+        working-directory: mmtk
+        run: bundle exec rake test
 
       - name: Run Ruby tests
         working-directory: ruby
