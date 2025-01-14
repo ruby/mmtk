@@ -1,5 +1,0 @@
-{
-  "rust-analyzer.linkedProjects": [
-    "gc/mmtk/Cargo.toml"
-  ],
-}
