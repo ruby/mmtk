@@ -39,6 +39,12 @@ namespace :install do
   task(release: :"compile:release", &install_task)
 end
 
+task :cbindgen do
+  Dir.chdir("gc/mmtk") do
+    sh("cbindgen --config cbindgen.toml --output mmtk.h")
+  end
+end
+
 RUBY_HEADERS = %w[
   ccan/check_type/check_type.h ccan/container_of/container_of.h ccan/list/list.h ccan/str/str.h
   gc/gc_impl.h gc/gc.h gc/extconf_base.rb
