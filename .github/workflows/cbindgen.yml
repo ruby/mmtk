@@ -1,0 +1,17 @@
+name: cbindgen
+on: [push, pull_request]
+
+jobs:
+  header_check:
+    runs-on: ubuntu-latest
+    name: Check cbindgen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo install --force cbindgen
+      - run: bundle exec rake cbindgen
+      - run: git diff --no-ext-diff --ignore-submodules --exit-code
