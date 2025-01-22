@@ -32,6 +32,7 @@ end
 
 namespace :install do
   install_task = proc do
+    puts "mv #{Dir.glob("tmp/binaries/*").join} #{RbConfig::CONFIG["modular_gc_dir"]}"
     FileUtils.mv(Dir.glob("tmp/binaries/*"), RbConfig::CONFIG["modular_gc_dir"])
   end
 
