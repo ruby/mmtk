@@ -19,7 +19,7 @@ This repository holds the [MMTk](https://www.mmtk.io/) bindings for Ruby. The bi
 
 After building Ruby and the MMTk bindings, run Ruby with `RUBY_GC_LIBRARY=mmtk` environment variable. You can also configure the following environment variables:
 
-- `MMTK_PLAN=<NoGC|MarkSweep>`: Configures the GC algorithm used by MMTk. Defaults to `MarkSweep`.
+- `MMTK_PLAN=<NoGC|MarkSweep|Immix>`: Configures the GC algorithm used by MMTk. Defaults to `MarkSweep`.
 - `MMTK_HEAP_MODE=<fixed|dynamic>`: Configures the MMTk heap used. `fixed` is a fixed size heap, `dynamic` is a dynamic sized heap that will grow and shrink in size based on heuristics using the [MemBalancer](https://dl.acm.org/doi/pdf/10.1145/3563323) algorithm. Defaults to `dynamic`.
 - `MMTK_HEAP_MIN=<size>`: Configures the lower bound in heap memory usage by MMTk. Only valid when `MMTK_HEAP_MODE=dynamic`. `size` is in bytes, but you can also append `KiB`, `MiB`, `GiB` for larger sizes. Defaults to 1MiB.
 - `MMTK_HEAP_MAX=<size>`: Configures the upper bound in heap memory usage by MMTk. Once this limit is reached and no objects can be garbage collected, it will crash with an out-of-memory. `size` is in bytes, but you can also append `KiB`, `MiB`, `GiB` for larger sizes. Defaults to 80% of your system RAM.
