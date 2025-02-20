@@ -10,9 +10,9 @@ This repository holds the [MMTk](https://www.mmtk.io/) bindings for Ruby. The bi
 > This repository is synchronized into [ruby/ruby](https://github.com/ruby/ruby/), you can choose to either build it in this repository or build it in ruby/ruby. If you're building it in this repository, note that it is only expected to work on the latest commit of Ruby master.
 
 1. Ensure you have the Rust toolchain installed. You can follow [these instructions](https://www.rust-lang.org/tools/install) to install it.
-1. Ensure that you are running with Ruby from the latest commit of Ruby master and your Ruby is configured with `--with-modular-gc`. If you're unsure how to do this, refer to the ["building guide"](https://github.com/ruby/ruby/tree/master/gc#building-guide) for Modular GC.
+1. Ensure that you are running with Ruby from the latest commit of Ruby master and your Ruby is configured with `--with-modular-gc`. If you're unsure how to do this, refer to the ["building guide"](https://github.com/ruby/ruby/tree/master/gc#building-guide) for modular GC.
 1. Run `bundle install`.
-1. Run `bundle exec rake` to compile and install MMTk as a Modular GC.
+1. Run `bundle exec rake install:debug` or `bundle exec rake install:release` to compile and install MMTk as a modular GC.
 1. You can now run Ruby with environment variable `RUBY_GC_LIBRARY=mmtk` to use MMTk.
 
 ### Running
