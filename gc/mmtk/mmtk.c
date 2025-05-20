@@ -966,7 +966,11 @@ rb_gc_impl_undefine_finalizer(void *objspace_ptr, VALUE obj)
     struct objspace *objspace = objspace_ptr;
 
     st_data_t data = obj;
+
+    int lev = rb_gc_vm_lock();
     st_delete(objspace->finalizer_table, &data, 0);
+    rb_gc_vm_unlock(lev);
+
     FL_UNSET(obj, FL_FINALIZE);
 }
 
@@ -979,14 +983,17 @@ rb_gc_impl_copy_finalizer(void *objspace_ptr, VALUE dest, VALUE obj)
 
     if (!FL_TEST(obj, FL_FINALIZE)) return;
 
+    int lev = rb_gc_vm_lock();
     if (RB_LIKELY(st_lookup(objspace->finalizer_table, obj, &data))) {
-        table = (VALUE)data;
+        table = rb_ary_dup((VALUE)data);
+        RARRAY_ASET(table, 0, rb_obj_id(dest));
         st_insert(objspace->finalizer_table, dest, table);
         FL_SET(dest, FL_FINALIZE);
     }
     else {
         rb_bug("rb_gc_copy_finalizer: FL_FINALIZE set but not found in finalizer_table: %s", rb_obj_info(obj));
     }
+    rb_gc_vm_unlock(lev);
 }
 
 static int
