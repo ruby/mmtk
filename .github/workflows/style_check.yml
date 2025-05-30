@@ -1,0 +1,15 @@
+name: Style check
+on: [push, pull_request]
+
+jobs:
+  header_check:
+    runs-on: ubuntu-latest
+    name: Check code style
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust lints using Clippy
+        working-directory: gc/mmtk
+        run: cargo clippy
+      - name: Rust code format check
+        working-directory: gc/mmtk
+        run: cargo fmt --check
