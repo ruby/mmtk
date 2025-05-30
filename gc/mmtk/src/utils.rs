@@ -6,6 +6,10 @@ use mmtk::scheduler::{GCWork, GCWorker, WorkBucketStage};
 use crate::Ruby;
 use sysinfo::System;
 
+pub fn bad_style() {
+    let unused = 42;
+}
+
 pub struct ChunkedVecCollector<T> {
     vecs: Vec<Vec<T>>,
     current_vec: Vec<T>,
