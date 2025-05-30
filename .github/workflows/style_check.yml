@@ -1,0 +1,24 @@
+name: Style check
+on: [push, pull_request]
+
+jobs:
+  header_check:
+    runs-on: ubuntu-latest
+    name: Check code style
+    env:
+      # Deny warnings in cargo clippy:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust lints using Clippy (debug)
+        working-directory: gc/mmtk
+        run: cargo clippy
+      - name: Rust lints using Clippy (tests)
+        working-directory: gc/mmtk
+        run: cargo clippy --tests
+      - name: Rust lints using Clippy (release)
+        working-directory: gc/mmtk
+        run: cargo clippy --release
+      - name: Rust code format check
+        working-directory: gc/mmtk
+        run: cargo fmt --check
