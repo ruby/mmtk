@@ -1,0 +1,1 @@
+Just to test if the failure in https://github.com/ruby/mmtk/actions/runs/15337982573/job/43158736092?pr=36 is reproducible.
