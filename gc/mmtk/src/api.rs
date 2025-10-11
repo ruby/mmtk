@@ -201,6 +201,11 @@ pub extern "C" fn mmtk_gc_enabled_p() -> bool {
     crate::CONFIGURATION.gc_enabled.load(Ordering::Relaxed)
 }
 
+#[no_mangle]
+pub extern "C" fn mmtk_gc_in_progress_p() -> bool {
+    crate::mmtk().gc_in_progress()
+}
+
 // =============== Object allocation ===============
 
 #[no_mangle]
