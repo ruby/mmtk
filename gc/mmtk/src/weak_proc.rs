@@ -2,13 +2,15 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
-use mmtk::{
-    scheduler::{GCWork, GCWorker, WorkBucketStage},
-    util::ObjectReference,
-    vm::ObjectTracerContext,
-};
+use mmtk::scheduler::GCWork;
+use mmtk::scheduler::GCWorker;
+use mmtk::scheduler::WorkBucketStage;
+use mmtk::util::ObjectReference;
+use mmtk::vm::ObjectTracerContext;
 
-use crate::{abi::GCThreadTLS, upcalls, Ruby};
+use crate::abi::GCThreadTLS;
+use crate::upcalls;
+use crate::Ruby;
 
 pub struct WeakProcessor {
     non_parallel_obj_free_candidates: Mutex<Vec<ObjectReference>>,
