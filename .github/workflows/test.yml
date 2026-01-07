@@ -67,7 +67,7 @@ jobs:
           if [[ ${{ matrix.gc.mmtk_build }} == debug ]]; then
             echo 'RUST_LOG=' >> $GITHUB_ENV
             echo 'RUBY_TEST_TIMEOUT_SCALE=20' >> $GITHUB_ENV
-            echo 'SYNTAX_SUGGEST_TIMEOUT=60' >> $GITHUB_ENV
+            echo 'SYNTAX_SUGGEST_TIMEOUT=120' >> $GITHUB_ENV
           fi
           echo "EXCLUDES=$PWD/test/.excludes-mmtk" >> $GITHUB_ENV
           echo "MSPECOPT=-B$PWD/spec/mmtk.mspec" >> $GITHUB_ENV
