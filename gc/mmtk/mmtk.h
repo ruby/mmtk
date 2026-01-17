@@ -112,6 +112,8 @@ void mmtk_set_gc_enabled(bool enable);
 
 bool mmtk_gc_enabled_p(void);
 
+bool mmtk_gc_in_progress_p(void);
+
 MMTk_Address mmtk_alloc(MMTk_Mutator *mutator,
                         size_t size,
                         size_t align,
