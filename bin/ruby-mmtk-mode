@@ -1,0 +1,48 @@
+#!/bin/sh
+# Wrapper that invokes a modular-GC Ruby with MMTk + a specific MMTK_HEAP_MODE.
+#
+# ruby-bench's run_benchmarks.rb compares Ruby executables passed via `-e`.
+# Each `-e` entry is a single command line, so to compare two MMTk heap modes
+# we need one executable per mode with the relevant env vars already baked in.
+#
+# Usage:
+#   bin/ruby-mmtk-mode <mode> [-- extra env VAR=VAL ...] -- <ruby args...>
+#
+# The caller is expected to set RUBY_BIN to the path of a Ruby built with
+# --with-modular-gc and the MMTk binding installed (or to have it on $PATH).
+#
+# Examples:
+#   RUBY_BIN=$HOME/.rubies/ruby-mmtk/bin/ruby bin/ruby-mmtk-mode ruby -- -e 'puts GC.config'
+#   RUBY_BIN=$HOME/.rubies/ruby-mmtk/bin/ruby bin/ruby-mmtk-mode cpu  -- -e 'puts GC.config'
+
+set -eu
+
+if [ $# -lt 1 ]; then
+  echo "usage: $0 <heap_mode> [VAR=VAL ...] -- <ruby args>" >&2
+  exit 64
+fi
+
+MODE=$1
+shift
+
+# Optional additional env vars before the `--` separator.
+while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+  case "$1" in
+    *=*) export "$1" ;;
+    *)
+      echo "$0: expected VAR=VAL or --, got: $1" >&2
+      exit 64
+      ;;
+  esac
+  shift
+done
+if [ $# -gt 0 ] && [ "$1" = "--" ]; then
+  shift
+fi
+
+RUBY=${RUBY_BIN:-ruby}
+
+exec env \
+  RUBY_GC_LIBRARY=mmtk \
+  MMTK_HEAP_MODE="$MODE" \
+  "$RUBY" "$@"

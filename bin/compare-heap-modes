@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Compare MMTk heap modes on ruby-bench.
+#
+# Runs the ruby-bench suite (expected checked out at $RUBY_BENCH_DIR, default
+# ../ruby-bench) with two Ruby "executables" that are the same modular-GC
+# Ruby, but wrapped so each sets a different MMTK_HEAP_MODE.
+#
+# Required env:
+#   RUBY_BIN         Path to a Ruby built with --with-modular-gc and the
+#                    MMTk binding installed. (e.g. ~/.rubies/ruby-mmtk/bin/ruby)
+#
+# Optional env:
+#   RUBY_BENCH_DIR   Path to ruby-bench checkout (default: ../ruby-bench)
+#   MODES            Space-separated list of heap modes to compare
+#                    (default: "ruby cpu"). Others: "fixed dynamic".
+#   BENCHES          Space-separated list of benchmarks to run (default: a
+#                    curated small-but-GC-sensitive set). Pass empty string
+#                    "" to run the whole default suite.
+#   WARMUP           WARMUP_ITRS (default 5)
+#   BENCH            MIN_BENCH_ITRS (default 10)
+#   TIME             MIN_BENCH_TIME (default 20)
+#   MMTK_GC_CPU_TARGET  CPU overhead target for `cpu` mode (default 5)
+#   MMTK_GC_CPU_WINDOW  averaging window for `cpu` mode (default 3)
+#
+# Example:
+#   RUBY_BIN=~/.rubies/ruby-mmtk/bin/ruby \
+#     bin/compare-heap-modes
+#
+#   RUBY_BIN=~/.rubies/ruby-mmtk/bin/ruby MODES="ruby cpu dynamic" \
+#   BENCHES="liquid-render psych-load railsbench" \
+#     bin/compare-heap-modes
+
+set -euo pipefail
+
+if [ -z "${RUBY_BIN:-}" ]; then
+  echo "error: RUBY_BIN must be set to a Ruby built with --with-modular-gc" >&2
+  exit 64
+fi
+if [ ! -x "$RUBY_BIN" ]; then
+  echo "error: RUBY_BIN=$RUBY_BIN is not executable" >&2
+  exit 64
+fi
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BENCH_DIR="${RUBY_BENCH_DIR:-$REPO_ROOT/../ruby-bench}"
+if [ ! -d "$BENCH_DIR" ]; then
+  echo "error: ruby-bench checkout not found at $BENCH_DIR" >&2
+  echo "       clone it with: git clone https://github.com/ruby/ruby-bench $BENCH_DIR" >&2
+  exit 66
+fi
+
+# Put RUBY_BIN's bin directory first on PATH so `bundle exec`, `ruby`, and any
+# shebangs invoking `ruby` resolve to the modular-GC Ruby instead of whatever
+# system Ruby comes first in the caller's environment.
+RUBY_BIN_DIR="$(cd "$(dirname "$RUBY_BIN")" && pwd)"
+export PATH="$RUBY_BIN_DIR:$PATH"
+
+# Clear gem-path vars that might still point at a different Ruby's gems.
+unset GEM_HOME GEM_PATH BUNDLE_PATH RUBYLIB RUBYOPT 2>/dev/null || true
+
+MODES=${MODES:-"ruby cpu"}
+# A curated GC-sensitive subset. Override with BENCHES="".
+DEFAULT_BENCHES="liquid-render psych-load railsbench lee binarytrees"
+if [ -z "${BENCHES+x}" ]; then
+  BENCHES="$DEFAULT_BENCHES"
+fi
+
+export WARMUP_ITRS="${WARMUP:-5}"
+export MIN_BENCH_ITRS="${BENCH:-10}"
+export MIN_BENCH_TIME="${TIME:-20}"
+
+# Export tunables so all wrapped runs see the same values. The `ruby` mode
+# ignores MMTK_GC_CPU_*; the `cpu` mode ignores RUBY_GC_HEAP_*.
+export MMTK_GC_CPU_TARGET="${MMTK_GC_CPU_TARGET:-5}"
+export MMTK_GC_CPU_WINDOW="${MMTK_GC_CPU_WINDOW:-3}"
+
+WRAPPER="$REPO_ROOT/bin/ruby-mmtk-mode"
+RUBY_ARGS=()
+for mode in $MODES; do
+  RUBY_ARGS+=(-e "mmtk-$mode::$WRAPPER $mode -- ")
+done
+
+cd "$BENCH_DIR"
+
+echo "== compare-heap-modes =="
+echo "ruby_bin:  $RUBY_BIN"
+echo "modes:     $MODES"
+echo "benches:   ${BENCHES:-<all>}"
+echo "warmup:    $WARMUP_ITRS"
+echo "bench:     $MIN_BENCH_ITRS iters / $MIN_BENCH_TIME s min"
+echo "cpu target:$MMTK_GC_CPU_TARGET% window=$MMTK_GC_CPU_WINDOW"
+echo "---"
+
+# `--rss` records peak RSS per run, essential for comparing memory footprint
+# between heap-sizing policies.
+# `--no-sudo` skips CPU governor / turbo tweaks that would need root.
+export RUBY_BIN
+exec bundle exec ./run_benchmarks.rb --no-sudo --rss "${RUBY_ARGS[@]}" ${BENCHES:-}
