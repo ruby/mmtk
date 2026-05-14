@@ -22,7 +22,7 @@ jobs:
           - mmtk_plan: Immix
             mmtk_build: debug
             timeout: 150
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-26, ubuntu-latest]
 
     env:
       GITPULLOPTIONS: --no-tags origin ${{ github.ref }}
