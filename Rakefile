@@ -8,9 +8,19 @@ require "rake/testtask"
 
 task default: :"install:debug"
 
-Rake::TestTask.new(:test) do |t|
-  t.test_files = FileList["test/**/test_*.rb"]
+namespace :test do
+  Rake::TestTask.new(:ruby) do |t|
+    t.test_files = FileList["test/**/test_*.rb"]
+  end
+
+  task :rust do
+    Dir.chdir("gc/mmtk") do
+      sh("cargo test")
+    end
+  end
 end
+
+task test: [:"test:ruby", :"test:rust"]
 
 Rake::ExtensionTask.prepend(Module.new do
   def binary(platform = nil)
