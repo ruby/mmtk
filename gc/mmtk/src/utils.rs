@@ -156,8 +156,8 @@ mod tests {
         assert_eq!(None, parse_capacity("99999999999999MiB"));
         assert_eq!(None, parse_capacity("99999999999999999KiB"));
 
-        const GIBIBYTE: usize = 1024 * 1024 * 1024;           
-        let max_gib = usize::MAX / GIBIBYTE; 
+        const GIBIBYTE: usize = 1024 * 1024 * 1024;
+        let max_gib = usize::MAX / GIBIBYTE;
         assert_eq!(
             Some(max_gib * GIBIBYTE),
             parse_capacity(&format!("{max_gib}GiB"))
