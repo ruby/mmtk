@@ -22,6 +22,11 @@ jobs:
           - mmtk_plan: Immix
             mmtk_build: debug
             timeout: 150
+          - mmtk_plan: StickyImmix
+            mmtk_build: release
+          - mmtk_plan: StickyImmix
+            mmtk_build: debug
+            timeout: 150
         os: [macos-latest, ubuntu-latest]
 
     env:
