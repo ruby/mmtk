@@ -112,37 +112,35 @@ fn mmtk_builder_default_parse_heap_mode(
     plan: PlanSelector,
 ) -> GCTriggerSelector {
     let make_fixed = || GCTriggerSelector::FixedHeapSize(heap_max);
-    let make_dynamic = || GCTriggerSelector::DynamicHeapSize(heap_min, heap_max);
+    let make_ruby = || {
+        if plan == PlanSelector::NoGC {
+            eprintln!("[WARN] Cannot use ruby heap mode with NoGC. Using fixed heap mode instead.");
+            return make_fixed();
+        }
+
+        let min_ratio = parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MIN_RATIO", 0.2, 0.0, 1.0);
+        let goal_ratio =
+            parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_GOAL_RATIO", 0.4, min_ratio, 1.0);
+        let max_ratio =
+            parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MAX_RATIO", 0.65, goal_ratio, 1.0);
+
+        crate::heap::RUBY_HEAP_TRIGGER_CONFIG
+            .set(RubyHeapTriggerConfig {
+                min_heap_pages: conversions::bytes_to_pages_up(heap_min),
+                max_heap_pages: conversions::bytes_to_pages_up(heap_max),
+                heap_pages_min_ratio: min_ratio,
+                heap_pages_goal_ratio: goal_ratio,
+                heap_pages_max_ratio: max_ratio,
+            })
+            .unwrap_or_else(|_| panic!("RUBY_HEAP_TRIGGER_CONFIG is already set"));
+
+        GCTriggerSelector::Delegated
+    };
 
     parse_env_var_with("MMTK_HEAP_MODE", |s| match s {
         "fixed" => Some(make_fixed()),
-        "dynamic" => Some(make_dynamic()),
-        "ruby" => {
-            if plan == PlanSelector::NoGC {
-                eprintln!(
-                    "[WARN] Cannot use ruby heap mode with NoGC. Using fixed heap mode instead."
-                );
-                return Some(make_fixed());
-            }
-
-            let min_ratio = parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MIN_RATIO", 0.2, 0.0, 1.0);
-            let goal_ratio =
-                parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_GOAL_RATIO", 0.4, min_ratio, 1.0);
-            let max_ratio =
-                parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MAX_RATIO", 0.65, goal_ratio, 1.0);
-
-            crate::heap::RUBY_HEAP_TRIGGER_CONFIG
-                .set(RubyHeapTriggerConfig {
-                    min_heap_pages: conversions::bytes_to_pages_up(heap_min),
-                    max_heap_pages: conversions::bytes_to_pages_up(heap_max),
-                    heap_pages_min_ratio: min_ratio,
-                    heap_pages_goal_ratio: goal_ratio,
-                    heap_pages_max_ratio: max_ratio,
-                })
-                .unwrap_or_else(|_| panic!("RUBY_HEAP_TRIGGER_CONFIG is already set"));
-
-            Some(GCTriggerSelector::Delegated)
-        }
+        "dynamic" => Some(GCTriggerSelector::DynamicHeapSize(heap_min, heap_max)),
+        "ruby" => Some(make_ruby()),
         "cpu" => {
             if plan == PlanSelector::NoGC {
                 eprintln!(
@@ -188,7 +186,7 @@ fn mmtk_builder_default_parse_heap_mode(
         }
         _ => None,
     })
-    .unwrap_or_else(make_dynamic)
+    .unwrap_or_else(make_ruby)
 }
 
 fn mmtk_builder_default_parse_plan() -> PlanSelector {
