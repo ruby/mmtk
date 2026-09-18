@@ -107,31 +107,30 @@ fn parse_float_env_var(key: &str, default: f64, min: f64, max: f64) -> f64 {
 }
 
 fn mmtk_builder_default_parse_heap_mode(heap_min: usize, heap_max: usize) -> GCTriggerSelector {
-    let make_fixed = || GCTriggerSelector::FixedHeapSize(heap_max);
-    let make_dynamic = || GCTriggerSelector::DynamicHeapSize(heap_min, heap_max);
+    let ruby_heap = || {
+        let min_ratio = parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MIN_RATIO", 0.2, 0.0, 1.0);
+        let goal_ratio =
+            parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_GOAL_RATIO", 0.4, min_ratio, 1.0);
+        let max_ratio =
+            parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MAX_RATIO", 0.65, goal_ratio, 1.0);
+
+        crate::heap::RUBY_HEAP_TRIGGER_CONFIG
+            .set(RubyHeapTriggerConfig {
+                min_heap_pages: conversions::bytes_to_pages_up(heap_min),
+                max_heap_pages: conversions::bytes_to_pages_up(heap_max),
+                heap_pages_min_ratio: min_ratio,
+                heap_pages_goal_ratio: goal_ratio,
+                heap_pages_max_ratio: max_ratio,
+            })
+            .unwrap_or_else(|_| panic!("RUBY_HEAP_TRIGGER_CONFIG is already set"));
+
+        GCTriggerSelector::Delegated
+    };
 
     parse_env_var_with("MMTK_HEAP_MODE", |s| match s {
-        "fixed" => Some(make_fixed()),
-        "dynamic" => Some(make_dynamic()),
-        "ruby" => {
-            let min_ratio = parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MIN_RATIO", 0.2, 0.0, 1.0);
-            let goal_ratio =
-                parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_GOAL_RATIO", 0.4, min_ratio, 1.0);
-            let max_ratio =
-                parse_float_env_var("RUBY_GC_HEAP_FREE_SLOTS_MAX_RATIO", 0.65, goal_ratio, 1.0);
-
-            crate::heap::RUBY_HEAP_TRIGGER_CONFIG
-                .set(RubyHeapTriggerConfig {
-                    min_heap_pages: conversions::bytes_to_pages_up(heap_min),
-                    max_heap_pages: conversions::bytes_to_pages_up(heap_max),
-                    heap_pages_min_ratio: min_ratio,
-                    heap_pages_goal_ratio: goal_ratio,
-                    heap_pages_max_ratio: max_ratio,
-                })
-                .unwrap_or_else(|_| panic!("RUBY_HEAP_TRIGGER_CONFIG is already set"));
-
-            Some(GCTriggerSelector::Delegated)
-        }
+        "fixed" => Some(GCTriggerSelector::FixedHeapSize(heap_max)),
+        "dynamic" => Some(GCTriggerSelector::DynamicHeapSize(heap_min, heap_max)),
+        "ruby" => Some(ruby_heap()), // Ruby heap is the default
         "cpu" => {
             // CPU-overhead-driven heap sizing based on Tavakolisomeh et al.,
             // "Heap Size Adjustment with CPU Control", MPLR '23.
@@ -170,7 +169,7 @@ fn mmtk_builder_default_parse_heap_mode(heap_min: usize, heap_max: usize) -> GCT
         }
         _ => None,
     })
-    .unwrap_or_else(make_dynamic)
+    .unwrap_or_else(|| ruby_heap())
 }
 
 fn mmtk_builder_default_parse_plan() -> PlanSelector {
