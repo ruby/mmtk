@@ -1692,7 +1692,7 @@ setup_gc_stat_symbols(void)
 VALUE
 rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
 {
-    if  (objspace_ptr == NULL) {
+    if (objspace_ptr == NULL) {
         rb_notimplement();
     }
 
