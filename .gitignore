@@ -6,3 +6,5 @@ Gemfile.lock
 tmp
 
 .DS_Store
+
+test.rb
