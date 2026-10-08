@@ -32,3 +32,22 @@ After building Ruby and the MMTk bindings, run Ruby with `RUBY_GC_LIBRARY=mmtk` 
 
 - `MMTK_GC_CPU_TARGET=<percent>`: Target GC CPU overhead, as a percentage, when `MMTK_HEAP_MODE=cpu`. After each GC cycle, the heap is grown if the measured GC CPU overhead exceeds this target and shrunk if it falls below. Defaults to `5`. The paper recommends `15` for the concurrent collector it targets (ZGC), but on MMTk-Ruby's stop-the-world Immix every percent of GC CPU also blocks the mutator, so a smaller budget gives better throughput. Empirical sweeps across ruby-bench find 5 Pareto-optimal vs. the `ruby` heap mode (~6% geomean speedup at essentially equal peak RSS).
 - `MMTK_GC_CPU_WINDOW=<n>`: Number of recent GC cycles averaged when measuring GC CPU overhead for `MMTK_HEAP_MODE=cpu`. Larger values smooth the signal at the cost of responsiveness. Defaults to `3`.
+
+## Vendored Ruby files
+
+This repository contains copies of some files from [ruby/ruby](https://github.com/ruby/ruby/). They are listed in `RUBY_HEADERS` in the `Rakefile`:
+
+- `gc/gc_impl.h`: the modular GC API (the `rb_gc_impl_*` functions) that `gc/mmtk/mmtk.c` implements.
+- `gc/gc.h`: the functions that Ruby provides to a GC implementation.
+- `darray.h` and `ccan/`: internal Ruby utilities that `gc/mmtk/mmtk.c` uses.
+- `gc/extconf_base.rb`: provides `create_gc_makefile`, which `gc/mmtk/extconf.rb` uses.
+
+An installed Ruby does not include these files, so a build in this repository needs local copies. The paths are the same as in ruby/ruby, so the code also builds without changes when it is synchronized into ruby/ruby.
+
+The copies must match Ruby master. To update them, run:
+
+```
+bundle exec rake vendor_ruby_headers
+```
+
+The "Header check" CI workflow runs this task and fails if the copies differ from Ruby master.
