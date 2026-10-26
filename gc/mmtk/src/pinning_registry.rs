@@ -57,6 +57,20 @@ impl PinningRegistry {
         worker.scheduler().work_buckets[WorkBucketStage::Prepare].bulk_add(work_packets);
     }
 
+    pub fn pin_roots(&self, roots: &[ObjectReference]) {
+        let mut newly_pinned_objs: Vec<ObjectReference> = roots
+            .iter()
+            .copied()
+            .filter(|obj| memory_manager::pin_object(*obj))
+            .collect();
+        if newly_pinned_objs.is_empty() {
+            return;
+        }
+
+        let mut pinned_objs = self.pinned_objs.lock().unwrap();
+        pinned_objs.append(&mut newly_pinned_objs);
+    }
+
     pub fn cleanup(&self, worker: &mut GCWorker<Ruby>) {
         worker.scheduler().work_buckets[WorkBucketStage::VMRefClosure].add(RemoveDeadPinnings);
         if crate::mmtk().get_plan().current_gc_may_move_object() {
