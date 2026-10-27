@@ -178,7 +178,9 @@ impl VMScanning {
         factory: &mut impl RootsWorkFactory<RubySlot>,
         callback: F,
     ) {
+        let current_gc_may_move = crate::mmtk().get_plan().current_gc_may_move_object();
         let mut buffer: Vec<ObjectReference> = Vec::new();
+        let mut pinned_roots: Vec<ObjectReference> = Vec::new();
         let visit_object = |_, object: ObjectReference, pin| {
             debug!(
                 "[{}] Visiting object: {}{}",
@@ -194,6 +196,9 @@ impl VMScanning {
                 mmtk::memory_manager::is_mmtk_object(object.to_raw_address()).is_some(),
                 "Root does not point to MMTk object.  object: {object}"
             );
+            if pin && current_gc_may_move {
+                pinned_roots.push(object);
+            }
             buffer.push(object);
             if buffer.len() >= Self::OBJECT_BUFFER_SIZE {
                 factory.create_process_pinning_roots_work(std::mem::take(&mut buffer));
@@ -203,6 +208,10 @@ impl VMScanning {
         gc_tls
             .object_closure
             .set_temporarily_and_run_code(visit_object, callback);
+
+        // Pinning roots are never moved, but only the pin bit makes rb_gc_impl_pinned_p
+        // true, and Ruby re-embeds strings and arrays whose pinned_p is false.
+        crate::binding().pinning_registry.pin_roots(&pinned_roots);
 
         if !buffer.is_empty() {
             factory.create_process_pinning_roots_work(buffer);
