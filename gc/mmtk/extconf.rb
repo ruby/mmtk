@@ -95,6 +95,12 @@ end
 
 # Statically link `libmmtk_ruby.a`
 $LIBS << " $(MMTK_BUILD)/$(LIBMMTK_RUBY)"
+if try_compile(<<~C)
+  #include <malloc.h>
+  size_t probe(void *p) { return malloc_usable_size(p); }
+C
+  $defs << "-DHAVE_MALLOC_USABLE_SIZE"
+end
 
 rustsrcs = Dir.glob("src/**/*.rs", base: __dir__).map {|s| "$(srcdir)/#{s}"}
 

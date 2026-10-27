@@ -1,10 +1,13 @@
 #include <pthread.h>
 #include <stdbool.h>
+#include <ctype.h>
+#include <math.h>
 #include <string.h>
 
 #include "ruby/assert.h"
 #include "ruby/atomic.h"
 #include "ruby/debug.h"
+#include "ruby/thread.h"
 
 #include "gc/gc.h"
 #include "gc/gc_impl.h"
@@ -19,6 +22,14 @@
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#endif
+
+#if defined(HAVE_MALLOC_USABLE_SIZE)
+#include <malloc.h>
+#define RB_MMTK_USABLE_SIZE(ptr) malloc_usable_size(ptr)
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
+#define RB_MMTK_USABLE_SIZE(ptr) malloc_size(ptr)
 #endif
 
 struct objspace {
@@ -59,6 +70,15 @@ struct objspace {
     uintptr_t vo_bit_log_region_size;
     uintptr_t vo_bit_base_addr;
     size_t max_non_los_default_alloc_bytes;
+
+    /* Net bytes malloc'd since the last GC, and the limit that triggers a GC.
+     * The limit adapts with the same rule as the default GC. */
+    size_t malloc_increase;
+    size_t malloc_limit;
+    size_t malloc_limit_min;
+    size_t malloc_limit_max;
+    rb_atomic_t malloc_gc_requested;
+    double malloc_limit_growth_factor;
 };
 
 #define OBJ_FREE_BUF_CAPACITY 128
@@ -178,6 +198,60 @@ rb_mmtk_resume_mutators(bool current_gc_may_move)
 }
 
 static void mmtk_flush_obj_free_buffer(struct MMTk_ractor_cache *cache);
+static void rb_mmtk_update_malloc_limit(struct objspace *objspace);
+
+/* Objects larger than this would go to the large object space.  Ruby keeps
+ * such data in a malloc'd buffer instead, as with the default GC, so that the
+ * malloc limit rather than heap size accounts for it. */
+static size_t rb_mmtk_max_embedded_size;
+
+/* Lower than the default GC's 16-32 MiB: every MMTk collection traces the whole
+ * heap, so malloc'd garbage is only freed by full collections and accumulates
+ * faster than under the default GC's frequent minor GCs. */
+#define GC_MALLOC_LIMIT_MIN (10 * 1024 * 1024)
+#define GC_MALLOC_LIMIT_MAX (10 * 1024 * 1024)
+#define GC_MALLOC_LIMIT_GROWTH_FACTOR 1.4
+
+/* Same syntax as the default GC: an integer with an optional k/m/g suffix. */
+static size_t
+rb_mmtk_env_size(const char *name, size_t default_value)
+{
+    const char *str = getenv(name);
+    if (str == NULL || *str == '\0') return default_value;
+
+    char *end;
+    long long value = strtoll(str, &end, 0);
+    unsigned long long unit = 1;
+    switch (*end) {
+      case 'k': case 'K': unit = 1024; end++; break;
+      case 'm': case 'M': unit = 1024 * 1024; end++; break;
+      case 'g': case 'G': unit = 1024 * 1024 * 1024; end++; break;
+    }
+    while (*end && isspace((unsigned char)*end)) end++;
+
+    if (*end || value < 0 || (unsigned long long)value > SIZE_MAX / unit) {
+        fprintf(stderr, "[WARN] Ignoring invalid %s=%s\n", name, str);
+        return default_value;
+    }
+
+    return (size_t)value * unit;
+}
+
+static double
+rb_mmtk_env_double(const char *name, double default_value)
+{
+    const char *str = getenv(name);
+    if (str == NULL || *str == '\0') return default_value;
+
+    char *end;
+    double value = strtod(str, &end);
+    if (*end != '\0' || !isfinite(value) || !(value >= 1.0)) {
+        fprintf(stderr, "[WARN] Ignoring invalid %s=%s\n", name, str);
+        return default_value;
+    }
+
+    return value;
+}
 
 RB_MMTK_UPCALL void
 rb_mmtk_block_for_gc(MMTk_VMMutatorThread mutator)
@@ -194,6 +268,8 @@ rb_mmtk_block_for_gc(MMTk_VMMutatorThread mutator)
     }
 
     if (objspace->gc_count == starting_gc_count) {
+        rb_mmtk_update_malloc_limit(objspace);
+
         rb_gc_event_hook(0, RUBY_INTERNAL_EVENT_GC_START);
 
         rb_gc_initialize_vm_context(&objspace->vm_context);
@@ -619,6 +695,8 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     objspace->vo_bit_log_region_size = mmtk_get_vo_bit_log_region_size();
     objspace->vo_bit_base_addr = mmtk_get_vo_bit_base_addr();
     objspace->max_non_los_default_alloc_bytes = mmtk_max_non_los_default_alloc_bytes();
+
+    rb_mmtk_max_embedded_size = objspace->max_non_los_default_alloc_bytes;
 }
 
 void
@@ -687,7 +765,20 @@ zjit_mmtk_newobj_tracing_p(void)
     return rb_gc_event_hook_required_p(RUBY_INTERNAL_EVENT_NEWOBJ);
 }
 
-void rb_gc_impl_set_params(void *objspace_ptr) { }
+/* Ruby calls this after the VM is initialized.  The malloc trigger stays off
+ * until then (malloc_limit is 0), so that no GC starts during early boot. */
+void
+rb_gc_impl_set_params(void *objspace_ptr)
+{
+    struct objspace *objspace = objspace_ptr;
+
+    objspace->malloc_limit_min = rb_mmtk_env_size("RUBY_GC_MALLOC_LIMIT", GC_MALLOC_LIMIT_MIN);
+    objspace->malloc_limit_max = rb_mmtk_env_size("RUBY_GC_MALLOC_LIMIT_MAX", GC_MALLOC_LIMIT_MAX);
+    if (objspace->malloc_limit_max == 0) objspace->malloc_limit_max = SIZE_MAX;
+    if (objspace->malloc_limit_max < objspace->malloc_limit_min) objspace->malloc_limit_max = objspace->malloc_limit_min;
+    objspace->malloc_limit_growth_factor = rb_mmtk_env_double("RUBY_GC_MALLOC_LIMIT_GROWTH_FACTOR", GC_MALLOC_LIMIT_GROWTH_FACTOR);
+    objspace->malloc_limit = objspace->malloc_limit_min;
+}
 
 static VALUE gc_verify_internal_consistency(VALUE self) { return Qnil; }
 
@@ -1095,7 +1186,9 @@ rb_gc_impl_size_slot_size(void *objspace_ptr, size_t size)
 bool
 rb_gc_impl_size_allocatable_p(size_t size)
 {
-    return true;
+    if (rb_mmtk_max_embedded_size == 0) return true;
+
+    return rb_mmtk_align_obj_size(size + sizeof(VALUE)) <= rb_mmtk_max_embedded_size;
 }
 
 size_t
@@ -1105,35 +1198,129 @@ rb_gc_impl_max_allocation_size(void)
 }
 
 // Malloc
+static void
+rb_mmtk_malloc_decrease(struct objspace *objspace, size_t size)
+{
+    if (size == 0) return;
+
+    while (1) {
+        size_t val = RUBY_ATOMIC_SIZE_LOAD(objspace->malloc_increase);
+        size_t decrement = val < size ? val : size;
+        if (RUBY_ATOMIC_SIZE_CAS(objspace->malloc_increase, val, val - decrement) == val) break;
+    }
+}
+
+/* Only malloc and calloc may start a GC, as in the default GC.  A GC inside
+ * realloc would trace the old buffer, which realloc has already freed, because
+ * the caller has not yet stored the new pointer. */
+static void
+rb_mmtk_malloc_increase(struct objspace *objspace, size_t size, bool gc_allowed)
+{
+    if (size == 0) return;
+
+    size_t increase = RUBY_ATOMIC_SIZE_FETCH_ADD(objspace->malloc_increase, size) + size;
+
+    /* malloc_limit is 0 until rb_gc_impl_set_params, after VM initialization.
+     * gc_impl.h permits collection only from a thread that holds the GVL. */
+    if (RB_UNLIKELY(objspace->malloc_limit != 0 && increase > objspace->malloc_limit) &&
+            gc_allowed && ruby_thread_has_gvl_p() && !objspace->world_stopped &&
+            mmtk_gc_enabled_p() && !rb_gc_gc_disabled_global_p()) {
+        struct MMTk_ractor_cache *cache = rb_gc_get_ractor_newobj_cache();
+        /* One request per crossing: other Ractors over the limit do not queue
+         * more GCs.  The GC start resets the flag in rb_mmtk_update_malloc_limit. */
+        if (cache != NULL && RUBY_ATOMIC_CAS(objspace->malloc_gc_requested, 0, 1) == 0) {
+            mmtk_handle_user_collection_request(cache, false, false);
+            RUBY_ATOMIC_SET(objspace->malloc_gc_requested, 0);
+        }
+    }
+}
+
+/* Called by the mutator that starts a GC, with the same rule as the default GC. */
+static void
+rb_mmtk_update_malloc_limit(struct objspace *objspace)
+{
+    size_t inc = RUBY_ATOMIC_SIZE_EXCHANGE(objspace->malloc_increase, 0);
+    RUBY_ATOMIC_SET(objspace->malloc_gc_requested, 0);
+
+    if (inc > objspace->malloc_limit) {
+        double new_limit = (double)inc * objspace->malloc_limit_growth_factor;
+        objspace->malloc_limit = new_limit >= (double)objspace->malloc_limit_max
+            ? objspace->malloc_limit_max
+            : (size_t)new_limit;
+    }
+    else {
+        objspace->malloc_limit = (size_t)(objspace->malloc_limit * 0.98);
+        if (objspace->malloc_limit < objspace->malloc_limit_min) {
+            objspace->malloc_limit = objspace->malloc_limit_min;
+        }
+    }
+}
+
+/* An old_size of 0 means the size is unknown, as with the public xrealloc and
+ * xfree; resolve it from the allocator, as the default GC does. */
+static size_t
+rb_mmtk_resolve_old_size(void *ptr, size_t old_size)
+{
+#if defined(RB_MMTK_USABLE_SIZE)
+    if (old_size == 0 && ptr != NULL) return RB_MMTK_USABLE_SIZE(ptr);
+#endif
+    return old_size;
+}
+
 void *
 rb_gc_impl_malloc(void *objspace_ptr, size_t size, bool gc_allowed)
 {
     // TODO: don't use system malloc
-    return malloc(size);
+    void *mem = malloc(size);
+    if (mem) rb_mmtk_malloc_increase(objspace_ptr, size, gc_allowed);
+    return mem;
 }
 
 void *
 rb_gc_impl_calloc(void *objspace_ptr, size_t size, bool gc_allowed)
 {
     // TODO: don't use system calloc
-    return calloc(1, size);
+    void *mem = calloc(1, size);
+    if (mem) rb_mmtk_malloc_increase(objspace_ptr, size, gc_allowed);
+    return mem;
 }
 
 void *
 rb_gc_impl_realloc(void *objspace_ptr, void *ptr, size_t new_size, size_t old_size, bool gc_allowed)
 {
     // TODO: don't use system realloc
-    return realloc(ptr, new_size);
+    old_size = rb_mmtk_resolve_old_size(ptr, old_size);
+    void *mem = realloc(ptr, new_size);
+    if (mem) {
+        if (new_size > old_size) {
+            rb_mmtk_malloc_increase(objspace_ptr, new_size - old_size, false);
+        }
+        else {
+            rb_mmtk_malloc_decrease(objspace_ptr, old_size - new_size);
+        }
+    }
+    return mem;
 }
 
 void
 rb_gc_impl_free(void *objspace_ptr, void *ptr, size_t old_size)
 {
     // TODO: don't use system free
+    old_size = rb_mmtk_resolve_old_size(ptr, old_size);
     free(ptr);
+    rb_mmtk_malloc_decrease(objspace_ptr, old_size);
 }
 
-void rb_gc_impl_adjust_memory_usage(void *objspace_ptr, ssize_t diff) { }
+void
+rb_gc_impl_adjust_memory_usage(void *objspace_ptr, ssize_t diff)
+{
+    if (diff > 0) {
+        rb_mmtk_malloc_increase(objspace_ptr, (size_t)diff, false);
+    }
+    else {
+        rb_mmtk_malloc_decrease(objspace_ptr, (size_t)-diff);
+    }
+}
 
 // Marking
 static inline VALUE
