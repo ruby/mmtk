@@ -11,13 +11,35 @@ use crate::abi::GCThreadTLS;
 use crate::upcalls;
 
 pub struct WeakProcessor {
-    non_parallel_obj_free_candidates: Mutex<Vec<ObjectReference>>,
-    parallel_obj_free_candidates: Vec<Mutex<Vec<ObjectReference>>>,
+    non_parallel_obj_free_candidates: Mutex<ObjFreeCandidates>,
+    parallel_obj_free_candidates: Vec<Mutex<ObjFreeCandidates>>,
 
     /// Objects that needs `obj_free` called when dying.
     /// If it is a bottleneck, replace it with a lock-free data structure,
     /// or add candidates in batch.
     weak_references: Mutex<Vec<ObjectReference>>,
+}
+
+/// Candidates for `obj_free`, with a generation watermark for generational
+/// (StickyImmix) collection.
+///
+/// `objects[..mature_len]` are mature: they survived at least one GC.  Under
+/// sticky mark bits such objects are considered reachable in nursery GCs
+/// without being traced, and nursery GCs never move them, so nursery GCs
+/// only need to scan the young suffix `objects[mature_len..]`.  Full GCs
+/// scan the whole list.
+struct ObjFreeCandidates {
+    objects: Vec<ObjectReference>,
+    mature_len: usize,
+}
+
+impl ObjFreeCandidates {
+    fn new() -> Self {
+        Self {
+            objects: Vec::new(),
+            mature_len: 0,
+        }
+    }
 }
 
 impl Default for WeakProcessor {
@@ -29,8 +51,8 @@ impl Default for WeakProcessor {
 impl WeakProcessor {
     pub fn new() -> Self {
         Self {
-            non_parallel_obj_free_candidates: Mutex::new(Vec::new()),
-            parallel_obj_free_candidates: vec![Mutex::new(Vec::new())],
+            non_parallel_obj_free_candidates: Mutex::new(ObjFreeCandidates::new()),
+            parallel_obj_free_candidates: vec![Mutex::new(ObjFreeCandidates::new())],
             weak_references: Mutex::new(Vec::new()),
         }
     }
@@ -40,7 +62,7 @@ impl WeakProcessor {
 
         for _ in 1..num_workers {
             self.parallel_obj_free_candidates
-                .push(Mutex::new(Vec::new()));
+                .push(Mutex::new(ObjFreeCandidates::new()));
         }
     }
 
@@ -63,7 +85,7 @@ impl WeakProcessor {
                 let mut bucket = self.parallel_obj_free_candidates[idx].lock().unwrap();
                 for (i, &obj) in objects.iter().enumerate() {
                     if i % num_buckets == idx {
-                        bucket.push(obj);
+                        bucket.objects.push(obj);
                     }
                 }
             }
@@ -71,20 +93,22 @@ impl WeakProcessor {
             self.non_parallel_obj_free_candidates
                 .lock()
                 .unwrap()
+                .objects
                 .extend_from_slice(objects);
         }
     }
 
     pub fn get_all_obj_free_candidates(&self) -> Vec<ObjectReference> {
-        // let mut obj_free_candidates = self.obj_free_candidates.lock().unwrap();
         let mut all_obj_free_candidates = self
             .non_parallel_obj_free_candidates
             .lock()
             .unwrap()
+            .objects
             .to_vec();
 
         for candidates_mutex in &self.parallel_obj_free_candidates {
-            all_obj_free_candidates.extend(candidates_mutex.lock().unwrap().to_vec());
+            all_obj_free_candidates
+                .extend(candidates_mutex.lock().unwrap().objects.iter().copied());
         }
 
         std::mem::take(all_obj_free_candidates.as_mut())
@@ -104,15 +128,18 @@ impl WeakProcessor {
         worker: &mut GCWorker<Ruby>,
         _tracer_context: impl ObjectTracerContext<Ruby>,
     ) {
+        // The GC kind is fixed for the whole GC cycle, so query it once here.
+        let nursery_gc = is_nursery_gc();
+
         worker.add_work(
             WorkBucketStage::VMRefClosure,
-            ProcessNonParallelObjFreeCanadidates {},
+            ProcessNonParallelObjFreeCanadidates { nursery_gc },
         );
 
         for index in 0..self.parallel_obj_free_candidates.len() {
             worker.add_work(
                 WorkBucketStage::VMRefClosure,
-                ProcessParallelObjFreeCandidates { index },
+                ProcessParallelObjFreeCandidates { index, nursery_gc },
             );
         }
 
@@ -132,26 +159,52 @@ impl WeakProcessor {
     }
 }
 
-fn process_obj_free_candidates(obj_free_candidates: &mut Vec<ObjectReference>) {
-    // Process obj_free
-    let mut new_candidates = Vec::new();
+/// Whether the current GC is a nursery (young-only) collection.  Always
+/// false for non-generational plans.
+fn is_nursery_gc() -> bool {
+    (crate::mmtk().get_plan().generational())
+        .is_some_and(|gen_plan| gen_plan.is_current_gc_nursery())
+}
 
-    for object in obj_free_candidates.iter().copied() {
+/// Process obj_free candidates, calling `obj_free` on the dead ones and
+/// keeping the rest.
+///
+/// In a nursery GC, only the young suffix is scanned: entries in the mature
+/// prefix survived a previous GC and are certainly still alive (sticky mark
+/// bits), so they can neither die nor move. Everything is scanned in a full
+/// GC.
+fn process_obj_free_candidates(candidates: &mut ObjFreeCandidates, nursery_gc: bool) {
+    let total = candidates.objects.len();
+    let young_start = if nursery_gc { candidates.mature_len } else { 0 };
+
+    // In-place compaction of the scanned range [young_start, total).
+    let mut write = young_start;
+    for read in young_start..total {
+        let object = candidates.objects[read];
         if object.is_reachable() {
-            // Forward and add back to the candidate list.
+            // Forward and keep the candidate.
             let new_object = object.forward();
             trace!("Forwarding obj_free candidate: {object} -> {new_object}");
-            new_candidates.push(new_object);
+            candidates.objects[write] = new_object;
+            write += 1;
         } else {
             upcalls::call_obj_free(object);
         }
     }
+    candidates.objects.truncate(write);
+    candidates.mature_len = write;
 
-    *obj_free_candidates = new_candidates;
+    debug!(
+        "Processed obj_free candidates: {total} total, {} scanned, {} skipped mature, {} freed (nursery_gc={nursery_gc})",
+        total - young_start,
+        young_start,
+        total - write,
+    );
 }
 
 struct ProcessParallelObjFreeCandidates {
     index: usize,
+    nursery_gc: bool,
 }
 
 impl GCWork<Ruby> for ProcessParallelObjFreeCandidates {
@@ -161,11 +214,13 @@ impl GCWork<Ruby> for ProcessParallelObjFreeCandidates {
             .try_lock()
             .expect("Lock for parallel_obj_free_candidates should not be held");
 
-        process_obj_free_candidates(&mut obj_free_candidates);
+        process_obj_free_candidates(&mut obj_free_candidates, self.nursery_gc);
     }
 }
 
-struct ProcessNonParallelObjFreeCanadidates;
+struct ProcessNonParallelObjFreeCanadidates {
+    nursery_gc: bool,
+}
 
 impl GCWork<Ruby> for ProcessNonParallelObjFreeCanadidates {
     fn do_work(&mut self, _worker: &mut GCWorker<Ruby>, _mmtk: &'static mmtk::MMTK<Ruby>) {
@@ -175,7 +230,7 @@ impl GCWork<Ruby> for ProcessNonParallelObjFreeCanadidates {
             .try_lock()
             .expect("Lock for non_parallel_obj_free_candidates should not be held");
 
-        process_obj_free_candidates(&mut obj_free_candidates);
+        process_obj_free_candidates(&mut obj_free_candidates, self.nursery_gc);
     }
 }
 
