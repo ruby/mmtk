@@ -214,7 +214,7 @@ static size_t rb_mmtk_max_embedded_size;
 
 /* Same syntax as the default GC: an integer with an optional k/m/g suffix. */
 static size_t
-rb_mmtk_env_size(const char *name, size_t default_value)
+rb_mmtk_env_size(const char *name, size_t default_value, bool allow_zero)
 {
     const char *str = getenv(name);
     if (str == NULL || *str == '\0') return default_value;
@@ -229,7 +229,7 @@ rb_mmtk_env_size(const char *name, size_t default_value)
     }
     while (*end && isspace((unsigned char)*end)) end++;
 
-    if (*end || value < 0 || (unsigned long long)value > SIZE_MAX / unit) {
+    if (*end || value < 0 || (value == 0 && !allow_zero) || (unsigned long long)value > SIZE_MAX / unit) {
         fprintf(stderr, "[WARN] Ignoring invalid %s=%s\n", name, str);
         return default_value;
     }
@@ -772,8 +772,8 @@ rb_gc_impl_set_params(void *objspace_ptr)
 {
     struct objspace *objspace = objspace_ptr;
 
-    objspace->malloc_limit_min = rb_mmtk_env_size("RUBY_GC_MALLOC_LIMIT", GC_MALLOC_LIMIT_MIN);
-    objspace->malloc_limit_max = rb_mmtk_env_size("RUBY_GC_MALLOC_LIMIT_MAX", GC_MALLOC_LIMIT_MAX);
+    objspace->malloc_limit_min = rb_mmtk_env_size("RUBY_GC_MALLOC_LIMIT", GC_MALLOC_LIMIT_MIN, false);
+    objspace->malloc_limit_max = rb_mmtk_env_size("RUBY_GC_MALLOC_LIMIT_MAX", GC_MALLOC_LIMIT_MAX, true);
     if (objspace->malloc_limit_max == 0) objspace->malloc_limit_max = SIZE_MAX;
     if (objspace->malloc_limit_max < objspace->malloc_limit_min) objspace->malloc_limit_max = objspace->malloc_limit_min;
     objspace->malloc_limit_growth_factor = rb_mmtk_env_double("RUBY_GC_MALLOC_LIMIT_GROWTH_FACTOR", GC_MALLOC_LIMIT_GROWTH_FACTOR);

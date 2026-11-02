@@ -56,6 +56,16 @@ module MMTk
       )
     end
 
+    def test_zero_RUBY_GC_MALLOC_LIMIT_is_rejected
+      assert_in_out_err(
+        [{ "RUBY_GC_MALLOC_LIMIT" => "0" }, "-e", "p :ok"],
+        "",
+        [":ok"],
+        ["[WARN] Ignoring invalid RUBY_GC_MALLOC_LIMIT=0"],
+        success: true
+      )
+    end
+
     def test_small_malloc_limit_during_boot
       env = { "RUBY_GC_MALLOC_LIMIT" => "16384", "RUBY_GC_MALLOC_LIMIT_MAX" => "16384" }
       assert_separately([env], <<~RUBY)
