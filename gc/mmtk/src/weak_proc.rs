@@ -131,17 +131,27 @@ impl WeakProcessor {
 }
 
 fn process_obj_free_candidates(obj_free_candidates: &mut Vec<ObjectReference>) {
+    let num_candidates = obj_free_candidates.len();
+    let mut num_retained = 0;
+
     obj_free_candidates.retain_mut(|object| {
         if object.is_reachable() {
             let new_object = object.forward();
             trace!("Forwarding obj_free candidate: {object} -> {new_object}");
             *object = new_object;
+            num_retained += 1;
             true
         } else {
             upcalls::call_obj_free(*object);
             false
         }
     });
+    probe::probe!(
+        ruby_mmtk,
+        process_obj_free_candidates,
+        num_candidates,
+        num_retained
+    );
 }
 
 struct ProcessParallelObjFreeCandidates {
@@ -210,6 +220,9 @@ impl ProcessWeakReferences {
             .try_lock()
             .expect("Mutators should not be holding the lock.");
 
+        let num_weakrefs = weak_references.len();
+        let mut num_retained = 0;
+
         weak_references.retain_mut(|object_ptr| {
             let object = object_ptr.get_forwarded_object().unwrap_or(*object_ptr);
 
@@ -219,12 +232,19 @@ impl ProcessWeakReferences {
 
             if object.is_reachable() {
                 upcalls::handle_weak_references(object, moving_gc);
-
+                num_retained += 1;
                 true
             } else {
                 false
             }
         });
+
+        probe::probe!(
+            ruby_mmtk,
+            process_weak_references,
+            num_weakrefs,
+            num_retained
+        );
     }
 }
 
