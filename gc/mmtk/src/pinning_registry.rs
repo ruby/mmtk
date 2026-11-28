@@ -106,6 +106,8 @@ struct PinPinningChildren {
 
 impl GCWork<Ruby> for PinPinningChildren {
     fn do_work(&mut self, worker: &mut GCWorker<Ruby>, _mmtk: &'static MMTK<Ruby>) {
+        let num_pinning_objs = self.pinning_objs.len();
+
         let gc_tls = unsafe { GCThreadTLS::from_vwt_check(worker.tls) };
         let mut pinned_objs = vec![];
         let mut newly_pinned_objs = vec![];
@@ -136,11 +138,23 @@ impl GCWork<Ruby> for PinPinningChildren {
                 }
             });
 
+        let num_pinned_objs = pinned_objs.len();
+
         for target_object in pinned_objs {
             if memory_manager::pin_object(target_object) {
                 newly_pinned_objs.push(target_object);
             }
         }
+
+        let num_newly_pinned_objs = newly_pinned_objs.len();
+
+        probe::probe!(
+            ruby_mmtk,
+            pin_pinning_children,
+            num_pinning_objs,
+            num_pinned_objs,
+            num_newly_pinned_objs
+        );
 
         let mut pinned_objs = crate::binding()
             .pinning_registry

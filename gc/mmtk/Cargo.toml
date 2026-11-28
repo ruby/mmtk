@@ -25,11 +25,12 @@ sysinfo = "0.32.0"
 features = ["vo_bit", "non_moving_root", "object_pinning", "sticky_immix_non_moving_nursery"]
 
 # Uncomment the following lines to use mmtk-core from the official repository.
-git = "https://github.com/mmtk/mmtk-core.git"
-rev = "42c1ac176c4d931c5503e880e650bb9e84bf802c"
+#git = "https://github.com/mmtk/mmtk-core.git"
+#rev = "42c1ac176c4d931c5503e880e650bb9e84bf802c"
 
 # Uncomment the following line to use mmtk-core from a local repository.
 # path = "../../../mmtk-core"
+path = "/home/wks/projects/mmtk-github/parallels/feature/ebpf-edge-node/mmtk-core"
 
 [features]
 default = []
